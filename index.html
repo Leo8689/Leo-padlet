@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Leo's Padlet</title>
+    <link rel="stylesheet" href="styles/style.css">
+</head>
+<body>
+
+    <!-- 상단 바 -->
+    <header class="topbar">
+        <div class="topbar__brand">
+            <span class="topbar__logo">🧱</span>
+            <span class="topbar__name">Leo's Padlet</span>
+        </div>
+        <div class="topbar__actions">
+            <span class="topbar__status" id="saveStatus">자동 저장됨</span>
+            <button class="btn btn--danger" type="button" data-reset-columns>↺ 빈 보드로 초기화</button>
+            <button class="btn btn--ghost" type="button" data-open-settings>🎨 디자인</button>
+        </div>
+    </header>
+
+    <!-- 보드 제목과 부제 (눌러서 바로 수정) -->
+    <section class="board-intro">
+        <h1 class="board-intro__title editable" contenteditable="true" data-edit="title" spellcheck="false"></h1>
+        <p class="board-intro__desc editable" contenteditable="true" data-edit="subtitle" spellcheck="false"></p>
+        <p class="board-intro__hint">제목, 부제, 컬럼 이름은 눌러서 바로 고칠 수 있어요.</p>
+    </section>
+
+    <!-- 보드: 컬럼은 JS(scripts/app.js)가 그립니다 -->
+    <main class="board" id="board"></main>
+
+    <!-- 항목 작성 창 -->
+    <dialog class="composer" id="composer">
+        <form class="composer__form" id="composerForm" novalidate>
+            <header class="composer__header">
+                <h2 class="composer__title" id="composerTitle">새 항목</h2>
+                <button class="icon-btn" type="button" id="composerClose" aria-label="닫기">✕</button>
+            </header>
+
+            <!-- 올릴 종류 선택 -->
+            <div class="type-tabs" id="typeTabs">
+                <button class="type-tab is-active" type="button" data-type="text">📝 텍스트</button>
+                <button class="type-tab" type="button" data-type="link">🔗 링크</button>
+                <button class="type-tab" type="button" data-type="image">🖼️ 이미지</button>
+                <button class="type-tab" type="button" data-type="video">🎬 영상</button>
+                <button class="type-tab" type="button" data-type="file">📎 파일</button>
+            </div>
+
+            <label class="field" data-for="text link image video file">
+                <span class="field__label">제목</span>
+                <input class="field__input" type="text" name="title" placeholder="제목을 입력하세요">
+            </label>
+
+            <label class="field" data-for="text link image video file">
+                <span class="field__label">이름 (닉네임)</span>
+                <input class="field__input" type="text" name="author" placeholder="예: 수강생 민지">
+            </label>
+
+            <label class="field" data-for="text">
+                <span class="field__label">내용</span>
+                <textarea class="field__input field__input--textarea" name="body" placeholder="텍스트를 입력하세요"></textarea>
+            </label>
+
+            <label class="field" data-for="link image video">
+                <span class="field__label">주소 (URL) · 영상은 유튜브 링크도 가능</span>
+                <input class="field__input" type="text" name="url" placeholder="https://...">
+            </label>
+
+            <label class="field" data-for="image video file">
+                <span class="field__label">파일 업로드 (최대 2MB)</span>
+                <input class="field__input" type="file" name="file" id="fileInput">
+            </label>
+
+            <p class="composer__error" id="composerError" hidden></p>
+
+            <footer class="composer__footer">
+                <button class="btn btn--ghost" type="button" id="composerCancel">취소</button>
+                <button class="btn btn--primary" type="submit" id="composerSubmit">게시하기</button>
+            </footer>
+        </form>
+    </dialog>
+
+    <!-- 디자인 설정 창: 배경, 강조색, 카드 모양 -->
+    <dialog class="composer" id="settings">
+        <div class="composer__form">
+            <header class="composer__header">
+                <h2 class="composer__title">🎨 디자인 설정</h2>
+                <button class="icon-btn" type="button" data-close="settings" aria-label="닫기">✕</button>
+            </header>
+
+            <section class="setting">
+                <h3 class="setting__title">배경</h3>
+                <div class="swatches" id="bgPresets"></div>
+            </section>
+
+            <section class="setting">
+                <h3 class="setting__title">강조색 (버튼과 포커스 색)</h3>
+                <div class="swatches" id="accentPresets"></div>
+                <label class="color-pick">
+                    <span>직접 고르기</span>
+                    <input type="color" id="accentInput" aria-label="강조색 직접 고르기">
+                </label>
+            </section>
+
+            <section class="setting">
+                <h3 class="setting__title">카드 모양</h3>
+                <div class="type-tabs">
+                    <button class="type-tab" type="button" data-card="round">둥글게</button>
+                    <button class="type-tab" type="button" data-card="square">각지게</button>
+                </div>
+            </section>
+
+            <footer class="composer__footer">
+                <button class="btn btn--ghost" type="button" id="themeReset">기본값으로</button>
+                <button class="btn btn--primary" type="button" data-close="settings">완료</button>
+            </footer>
+        </div>
+    </dialog>
+
+    <!-- 컬럼 색 창 -->
+    <dialog class="composer" id="columnStyle">
+        <div class="composer__form">
+            <header class="composer__header">
+                <h2 class="composer__title" id="columnStyleTitle">컬럼 색</h2>
+                <button class="icon-btn" type="button" data-close="columnStyle" aria-label="닫기">✕</button>
+            </header>
+            <p class="setting__desc">배경과 위쪽 줄 색을 골라 컬럼을 구분해 보세요.</p>
+            <div class="swatches" id="columnPresets"></div>
+            <footer class="composer__footer">
+                <button class="btn btn--primary" type="button" data-close="columnStyle">완료</button>
+            </footer>
+        </div>
+    </dialog>
+
+    <!-- Supabase 라이브러리 (서버 저장) -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.0/dist/umd/supabase.min.js"></script>
+    <script src="scripts/config.js"></script>
+    <script src="scripts/app.js"></script>
+</body>
+</html>
