@@ -79,6 +79,8 @@ const settingsDialog = document.getElementById('settings');
 const columnStyleDialog = document.getElementById('columnStyle');
 const titleEl = document.querySelector('[data-edit="title"]');
 const subtitleEl = document.querySelector('[data-edit="subtitle"]');
+const composerDelete = document.getElementById('composerDelete');
+const currentFileEl = document.getElementById('currentFile');
 
 // Supabase 연결 (scripts/config.js 에 값을 넣어야 동작합니다)
 const isConfigured = Boolean(CONFIG.SUPABASE_URL && CONFIG.SUPABASE_ANON_KEY)
@@ -91,6 +93,7 @@ let composerColumnId = null;
 let styleColumnId = null;
 let currentType = 'text';
 let busy = false;
+let editingItemId = null; // 값이 있으면 작성 창이 "수정 모드"
 
 /* ---------- 상태 표시 / 공통 처리 ---------- */
 function showStatus(message, isError = false) {
@@ -379,6 +382,8 @@ function renderItem(columnId, item) {
     const date = new Date(item.createdAt).toLocaleDateString('ko-KR');
     return `
         <article class="card card--${item.type}">
+            <button class="card__edit" type="button" data-action="edit-item"
+                data-column="${columnId}" data-item="${item.id}" aria-label="항목 수정" title="항목 수정">✎</button>
             <button class="card__delete" type="button" data-action="delete-item"
                 data-column="${columnId}" data-item="${item.id}" aria-label="항목 삭제" title="항목 삭제">✕</button>
             ${renderItemBody(item)}
@@ -389,10 +394,11 @@ function renderItem(columnId, item) {
         </article>`;
 }
 
+// 컬럼 = 위쪽 제목 박스 + 아래쪽 항목 판 (제목과 항목 판은 따로 있음)
 function renderColumn(column) {
     const items = column.items.map((item) => renderItem(column.id, item)).join('');
     return `
-        <section class="column" ${columnStyleAttr(column)}>
+        <div class="column-wrap" data-column-id="${column.id}" ${columnStyleAttr(column)}>
             <header class="column__header">
                 <h3 class="column__title editable" contenteditable="true" spellcheck="false"
                     data-edit="column" data-column="${column.id}">${esc(column.title)}</h3>
@@ -403,14 +409,15 @@ function renderColumn(column) {
                     data-column="${column.id}" aria-label="컬럼 삭제" title="컬럼 삭제">🗑</button>
             </header>
 
-            <div class="column__list">
-                ${items || '<p class="column__empty">아직 항목이 없습니다.</p>'}
-            </div>
+            <section class="column">
+                <button class="column__plus" type="button" data-action="add-item" data-column="${column.id}"
+                    aria-label="항목 추가" title="항목 추가">+</button>
 
-            <button class="column__add" type="button" data-action="add-item" data-column="${column.id}">
-                + 항목 추가
-            </button>
-        </section>`;
+                <div class="column__list">
+                    ${items || '<p class="column__empty">아직 항목이 없습니다.</p>'}
+                </div>
+            </section>
+        </div>`;
 }
 
 function render() {
@@ -565,6 +572,7 @@ boardEl.addEventListener('click', (event) => {
     if (action === 'add-item') openComposer(column);
     if (action === 'delete-item') deleteItem(column, item);
     if (action === 'column-color') openColumnStyle(column);
+    if (action === 'edit-item') openEditComposer(item);
 });
 
 /* ---------- 항목 작성 창 ---------- */
@@ -579,6 +587,11 @@ function setType(type) {
     composerForm.querySelectorAll('[data-for]').forEach((field) => {
         field.hidden = !field.dataset.for.split(' ').includes(type);
     });
+
+    // 종류에 맞는 파일만 고르도록 제한 (이미지는 이미지, 영상은 영상)
+    const fileInput = composerForm.elements.file;
+    fileInput.accept = type === 'image' ? 'image/*' : type === 'video' ? 'video/*' : '';
+    fileInput.value = '';
 }
 
 function openComposer(columnId) {
@@ -586,13 +599,160 @@ function openComposer(columnId) {
     if (!column) return;
 
     composerColumnId = columnId;
+    editingItemId = null;
+    typeTabs.hidden = false;
+    composerSubmit.textContent = '게시하기';
     composerTitle.textContent = `"${column.title}"에 추가`;
     composerForm.reset();
+    composerForm.elements.file.multiple = true; // 새 항목은 파일 여러 개 가능
+    composerDelete.hidden = true;
+    currentFileEl.hidden = true;
     // 이름은 이전에 입력한 값을 기억해서 채움
     composerForm.elements.author.value = localStorage.getItem('padlet-author') || '';
     setType('text');
     composer.showModal();
 }
+
+// 항목 id로 컬럼과 항목을 찾음
+function findItem(itemId) {
+    for (const column of board.columns) {
+        const item = column.items.find((entry) => entry.id === itemId);
+        if (item) return { column, item };
+    }
+    return null;
+}
+
+// 이미 있는 항목을 작성 창에 채워서 수정
+function openEditComposer(itemId) {
+    const found = findItem(itemId);
+    if (!found) return;
+    const { item } = found;
+
+    editingItemId = itemId;
+    composerTitle.textContent = '항목 수정';
+    composerForm.reset();
+    typeTabs.hidden = false; // 종류도 바꿀 수 있음
+    setType(item.type);
+
+    composerForm.elements.title.value = item.title || '';
+    composerForm.elements.body.value = item.body || '';
+    composerForm.elements.url.value = item.url || '';
+    composerForm.elements.author.value = item.author || '';
+
+    // 수정 땐 파일을 한 개만 골라 바꿈
+    composerForm.elements.file.multiple = false;
+    currentFileEl.textContent = `현재 파일: ${item.fileName}  (새 파일을 고르면 이 파일을 대신합니다)`;
+    currentFileEl.hidden = !item.filePath;
+
+    composerDelete.hidden = false;
+    composerSubmit.textContent = '저장';
+    composer.showModal();
+}
+
+// 수정 창의 삭제 버튼: 확인 후 항목 삭제 (업로드 파일도 함께 지움)
+composerDelete.addEventListener('click', () => {
+    const found = findItem(editingItemId);
+    if (!found) return;
+    const { column, item } = found;
+    if (!confirm(`"${item.title}" 항목을 삭제할까요?`)) return;
+
+    composer.close();
+    deleteItem(column.id, item.id);
+});
+
+// 수정 저장: 종류, 제목, 내용, 주소, 이름, 파일 모두 다시 정할 수 있음
+async function saveItemEdit() {
+    if (busy) return;
+    const found = findItem(editingItemId);
+    if (!found) return composer.close();
+    const { column, item } = found;
+
+    const type = currentType;
+    const title = composerForm.elements.title.value.trim();
+    const body = composerForm.elements.body.value.trim();
+    const url = normalizeUrl(composerForm.elements.url.value);
+    const author = composerForm.elements.author.value.trim();
+    const usesFile = ['image', 'video', 'file'].includes(type);
+    const newFile = usesFile ? composerForm.elements.file.files[0] : null;
+    // 파일 종류인데 새 파일을 안 고르면 기존 파일을 그대로 씀
+    const keepsFile = usesFile && !newFile && Boolean(item.filePath);
+
+    if (type === 'text' && !title && !body) {
+        return showComposerError('제목이나 내용을 입력해 주세요.');
+    }
+    if (type === 'link' && !url) {
+        return showComposerError('링크 주소를 입력해 주세요.');
+    }
+    if ((type === 'image' || type === 'video') && !newFile && !keepsFile && !url) {
+        return showComposerError('파일을 올리거나 주소를 입력해 주세요.');
+    }
+    if (type === 'file' && !newFile && !keepsFile) {
+        return showComposerError('업로드할 파일을 선택해 주세요.');
+    }
+    if (newFile && newFile.size > MAX_FILE_SIZE) {
+        return showComposerError(`"${newFile.name}" 파일이 너무 큽니다. 파일당 ${formatSize(MAX_FILE_SIZE)} 이하만 올릴 수 있습니다.`);
+    }
+
+    // 최종 파일 경로: 새 파일 > 기존 파일 유지 > 없음
+    const oldPath = item.filePath || '';
+    const newPath = newFile ? `${column.id}/${safeFileName(newFile.name)}` : '';
+    const filePath = newFile ? newPath : (keepsFile ? oldPath : '');
+    const fileName = newFile ? newFile.name : (keepsFile ? item.fileName : '');
+
+    const changes = {
+        type,
+        title: title || (newFile ? newFile.name : '') || url || '제목 없음',
+        body: type === 'text' || filePath ? body : '',
+        url: type === 'text' || type === 'file' ? '' : url,
+        author: author || '익명',
+        file_path: filePath,
+        file_name: fileName
+    };
+    if (!keepsFile) changes.file_size = newFile ? newFile.size : 0;
+
+    setBusy(true);
+    let uploadedPath = '';
+    try {
+        if (newFile) {
+            const { error } = await db.storage.from(BUCKET).upload(newPath, newFile, {
+                contentType: newFile.type || undefined,
+                upsert: false
+            });
+            if (error) throw error;
+            uploadedPath = newPath;
+        }
+
+        await exec(db.from('padlet_items').update(changes).eq('id', item.id));
+
+        // 파일이 바뀌었거나 파일 종류가 아니게 됐으면 예전 파일은 저장소에서 지움
+        if (oldPath && oldPath !== filePath) await removeFiles([oldPath]).catch(console.error);
+
+        Object.assign(item, {
+            type,
+            title: changes.title,
+            body: changes.body,
+            url: changes.url,
+            author: changes.author,
+            filePath,
+            fileName
+        });
+        composer.close();
+        showStatus('저장됨');
+    } catch (error) {
+        console.error(error);
+        if (uploadedPath) await db.storage.from(BUCKET).remove([uploadedPath]).catch(() => {});
+        showComposerError(`저장 실패: ${error.message || error}`);
+    } finally {
+        setBusy(false);
+        render();
+    }
+}
+
+// 창이 닫히면 수정 모드를 풀어서 다음 추가에 영향이 없게 함
+composer.addEventListener('close', () => {
+    editingItemId = null;
+    typeTabs.hidden = false;
+});
 
 function showComposerError(message) {
     composerError.textContent = message;
@@ -602,7 +762,11 @@ function showComposerError(message) {
 function setBusy(isBusy) {
     busy = isBusy;
     composerSubmit.disabled = isBusy;
-    composerSubmit.textContent = isBusy ? '업로드 중…' : '게시하기';
+    if (editingItemId) {
+        composerSubmit.textContent = isBusy ? '저장 중…' : '저장';
+    } else {
+        composerSubmit.textContent = isBusy ? '업로드 중…' : '게시하기';
+    }
 }
 
 typeTabs.addEventListener('click', (event) => {
@@ -612,6 +776,7 @@ typeTabs.addEventListener('click', (event) => {
 
 composerForm.addEventListener('submit', async (event) => {
     event.preventDefault();
+    if (editingItemId) return saveItemEdit();
     if (busy) return;
 
     const title = composerForm.elements.title.value.trim();
@@ -619,7 +784,7 @@ composerForm.addEventListener('submit', async (event) => {
     const url = normalizeUrl(composerForm.elements.url.value);
     const author = composerForm.elements.author.value.trim();
     const usesFile = ['image', 'video', 'file'].includes(currentType);
-    const file = usesFile ? composerForm.elements.file.files[0] : null;
+    const files = usesFile ? Array.from(composerForm.elements.file.files) : [];
 
     // 종류별 입력 확인
     if (currentType === 'text' && !title && !body) {
@@ -628,14 +793,15 @@ composerForm.addEventListener('submit', async (event) => {
     if (currentType === 'link' && !url) {
         return showComposerError('링크 주소를 입력해 주세요.');
     }
-    if ((currentType === 'image' || currentType === 'video') && !file && !url) {
+    if ((currentType === 'image' || currentType === 'video') && !files.length && !url) {
         return showComposerError('파일을 올리거나 주소를 입력해 주세요.');
     }
-    if (currentType === 'file' && !file) {
+    if (currentType === 'file' && !files.length) {
         return showComposerError('업로드할 파일을 선택해 주세요.');
     }
-    if (file && file.size > MAX_FILE_SIZE) {
-        return showComposerError(`파일은 ${formatSize(MAX_FILE_SIZE)} 이하만 올릴 수 있습니다. (선택한 파일: ${formatSize(file.size)})`);
+    const tooBig = files.find((file) => file.size > MAX_FILE_SIZE);
+    if (tooBig) {
+        return showComposerError(`"${tooBig.name}" 파일이 너무 큽니다. 파일당 ${formatSize(MAX_FILE_SIZE)} 이하만 올릴 수 있습니다. (${formatSize(tooBig.size)})`);
     }
 
     const column = findColumn(composerColumnId);
@@ -643,45 +809,79 @@ composerForm.addEventListener('submit', async (event) => {
 
     if (author) localStorage.setItem('padlet-author', author);
 
+    // 파일을 여러 개 고르면 파일 하나당 항목 하나를 만듦. 파일이 없으면(텍스트, 링크, 주소) 한 개만 만듦
+    const jobs = files.length ? files : [null];
+
+    // 파일 이름 대신 제목을 정했을 때: 여러 개면 "제목 1", "제목 2"처럼 번호를 붙임
+    const makeTitle = (index, file) => {
+        if (!file) return title || url || '제목 없음';
+        if (!title) return file.name;
+        return jobs.length > 1 ? `${title} ${index + 1}` : title;
+    };
+
     setBusy(true);
-    let filePath = '';
+    let saved = 0;
+    let pendingPath = ''; // 파일은 올렸지만 글 저장 전인 경우, 실패하면 이 파일을 지움
     try {
-        if (file) {
-            showStatus('파일 업로드 중…');
-            filePath = `${column.id}/${safeFileName(file.name)}`;
-            const { error } = await db.storage.from(BUCKET).upload(filePath, file, {
-                contentType: file.type || undefined,
-                upsert: false
-            });
-            if (error) throw error;
+        for (const [index, file] of jobs.entries()) {
+            if (jobs.length > 1) showStatus(`업로드 중… (${index + 1}/${jobs.length})`);
+            else showStatus('업로드 중…');
+
+            let filePath = '';
+            if (file) {
+                filePath = `${column.id}/${safeFileName(file.name)}`;
+                const { error } = await db.storage.from(BUCKET).upload(filePath, file, {
+                    contentType: file.type || undefined,
+                    upsert: false
+                });
+                if (error) throw error;
+                pendingPath = filePath;
+            }
+
+            const row = {
+                column_id: column.id,
+                type: currentType,
+                title: makeTitle(index, file),
+                body: currentType === 'text' || file ? body : '',
+                url: currentType === 'text' || currentType === 'file' ? '' : url,
+                author: author || '익명',
+                file_path: filePath,
+                file_name: file ? file.name : '',
+                file_size: file ? file.size : 0
+            };
+
+            const inserted = await exec(db.from('padlet_items').insert(row).select().single());
+            column.items.push(fromDbItem(inserted));
+            saved++;
+            pendingPath = '';
         }
 
-        const row = {
-            column_id: column.id,
-            type: currentType,
-            title: title || (file ? file.name : url) || '제목 없음',
-            body: currentType === 'text' || file ? body : '',
-            url: currentType === 'text' || currentType === 'file' ? '' : url,
-            author: author || '익명',
-            file_path: filePath,
-            file_name: file ? file.name : '',
-            file_size: file ? file.size : 0
-        };
-
-        const inserted = await exec(db.from('padlet_items').insert(row).select().single());
-        column.items.push(fromDbItem(inserted));
-        render();
         composer.close();
-        showStatus('저장됨');
+        showStatus(jobs.length > 1 ? `${saved}개 저장됨` : '저장됨');
     } catch (error) {
         console.error(error);
-        // 파일은 올라갔는데 글 저장이 실패하면 파일도 지움
-        if (filePath) await db.storage.from(BUCKET).remove([filePath]).catch(() => {});
-        showComposerError(`업로드 실패: ${error.message || error}`);
+        if (pendingPath) await db.storage.from(BUCKET).remove([pendingPath]).catch(() => {});
+
+        const message = `업로드 실패: ${error.message || error}`;
+        if (saved > 0) {
+            // 일부만 저장된 경우: 저장된 것은 그대로 두고 창을 닫아 중복 저장을 막음
+            composer.close();
+            showStatus(`${jobs.length}개 중 ${saved}개만 저장됨. ${message}`, true);
+        } else {
+            showComposerError(message);
+        }
     } finally {
         setBusy(false);
+        render();
+        if (saved > 0) scrollToBottom(column.id);
     }
 });
+
+// 새 항목이 아래로 쌓이므로, 해당 컬럼 목록을 맨 아래로 내려서 새 카드가 보이게 함
+function scrollToBottom(columnId) {
+    const list = boardEl.querySelector(`.column-wrap[data-column-id="${columnId}"] .column__list`);
+    if (list) list.scrollTop = list.scrollHeight;
+}
 
 /* ---------- 컬럼 색 창 ---------- */
 function openColumnStyle(columnId) {
