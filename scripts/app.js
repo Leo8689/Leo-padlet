@@ -81,6 +81,10 @@ const titleEl = document.querySelector('[data-edit="title"]');
 const subtitleEl = document.querySelector('[data-edit="subtitle"]');
 const composerDelete = document.getElementById('composerDelete');
 const currentFileEl = document.getElementById('currentFile');
+const loginDialog = document.getElementById('login');
+const loginForm = document.getElementById('loginForm');
+const loginError = document.getElementById('loginError');
+const adminToggle = document.getElementById('adminToggle');
 
 // Supabase 연결 (scripts/config.js 에 값을 넣어야 동작합니다)
 const isConfigured = Boolean(CONFIG.SUPABASE_URL && CONFIG.SUPABASE_ANON_KEY)
@@ -93,12 +97,20 @@ let composerColumnId = null;
 let styleColumnId = null;
 let currentType = 'text';
 let busy = false;
+let isAdmin = false; // 관리자로 로그인했는지 여부 (화면 표시용, 실제 권한은 Supabase가 확인)
 let editingItemId = null; // 값이 있으면 작성 창이 "수정 모드"
 
 /* ---------- 상태 표시 / 공통 처리 ---------- */
 function showStatus(message, isError = false) {
     statusEl.textContent = message;
     statusEl.classList.toggle('is-error', isError);
+}
+
+// 관리자 전용 기능 앞에서 확인. 관리자가 아니면 안내만 하고 막음
+function requireAdmin() {
+    if (isAdmin) return true;
+    showStatus('관리자만 할 수 있는 기능입니다. 오른쪽 위에서 관리자 로그인을 해 주세요.', true);
+    return false;
 }
 
 // 서버 호출을 감싸서 상태 표시와 오류 처리를 한 곳에서 함
@@ -218,7 +230,8 @@ async function seedDefaults() {
 // seedIfEmpty: 컬럼이 하나도 없을 때 예시 데이터를 넣을지 여부 (초기화 때는 false)
 async function loadBoard(seedIfEmpty = true) {
     const meta = await exec(db.from('padlet_board').select('*').eq('id', 1).maybeSingle());
-    if (!meta) {
+    // 보드 설정 행은 관리자가 만들 수 있음 (일반 방문자는 기본값으로 보여 줌)
+    if (!meta && isAdmin) {
         await exec(db.from('padlet_board').insert({
             id: 1,
             title: DEFAULT_BOARD_META.title,
@@ -384,7 +397,7 @@ function renderItem(columnId, item) {
         <article class="card card--${item.type}">
             <button class="card__edit" type="button" data-action="edit-item"
                 data-column="${columnId}" data-item="${item.id}" aria-label="항목 수정" title="항목 수정">✎</button>
-            <button class="card__delete" type="button" data-action="delete-item"
+            <button class="card__delete admin-only" type="button" data-action="delete-item"
                 data-column="${columnId}" data-item="${item.id}" aria-label="항목 삭제" title="항목 삭제">✕</button>
             ${renderItemBody(item)}
             <footer class="card__meta">
@@ -400,12 +413,12 @@ function renderColumn(column) {
     return `
         <div class="column-wrap" data-column-id="${column.id}" ${columnStyleAttr(column)}>
             <header class="column__header">
-                <h3 class="column__title editable" contenteditable="true" spellcheck="false"
+                <h3 class="column__title editable" contenteditable="${isAdmin}" spellcheck="false"
                     data-edit="column" data-column="${column.id}">${esc(column.title)}</h3>
                 <span class="column__count">${column.items.length}</span>
-                <button class="icon-btn" type="button" data-action="column-color"
+                <button class="icon-btn admin-only" type="button" data-action="column-color"
                     data-column="${column.id}" aria-label="컬럼 색 바꾸기" title="컬럼 색 바꾸기">🎨</button>
-                <button class="icon-btn" type="button" data-action="delete-column"
+                <button class="icon-btn admin-only" type="button" data-action="delete-column"
                     data-column="${column.id}" aria-label="컬럼 삭제" title="컬럼 삭제">🗑</button>
             </header>
 
@@ -421,13 +434,46 @@ function renderColumn(column) {
 }
 
 function render() {
-    boardEl.innerHTML = board.columns.map(renderColumn).join('')
-        + '<button class="column-add" type="button" data-action="add-column">+ 컬럼 추가</button>';
+    const empty = board.columns.length === 0
+        ? '<p class="column__empty board-empty">아직 컬럼이 없습니다. 관리자가 컬럼을 추가하면 여기에 보여요.</p>'
+        : '';
+    boardEl.innerHTML = empty + board.columns.map(renderColumn).join('')
+        + '<button class="column-add admin-only" type="button" data-action="add-column">+ 컬럼 추가</button>';
     applyTheme();
+}
+
+// 로그인 상태에 따라 화면 표시를 바꿈 (관리 기능 숨김, 제목·부제 편집 허용 여부, 로그인 버튼 글자)
+function applyRole() {
+    document.body.classList.toggle('is-admin', isAdmin);
+    titleEl.contentEditable = String(isAdmin);
+    subtitleEl.contentEditable = String(isAdmin);
+    adminToggle.textContent = isAdmin ? '🔓 관리자 로그아웃' : '🔐 관리자 로그인';
+}
+
+// 현재 로그인한 사람이 관리자인지 Supabase에 물어봄
+async function checkAdmin() {
+    const { data: { session } } = await db.auth.getSession();
+    if (!session) return false;
+    const { data, error } = await db.rpc('is_padlet_admin');
+    return !error && data === true;
+}
+
+// 처음 열때와 로그인·로그아웃 후에 보드를 다시 불러옴
+async function startApp() {
+    isAdmin = await checkAdmin().catch(() => false);
+    applyRole();
+
+    const loaded = await run('불러오는 중…', () => loadBoard(isAdmin), '불러옴');
+    if (!loaded) return;
+
+    titleEl.textContent = board.title;
+    subtitleEl.textContent = board.subtitle;
+    render();
 }
 
 /* ---------- 제목 / 부제 / 컬럼 제목 편집 ---------- */
 async function applyEdit(el) {
+    if (!requireAdmin()) return;
     const kind = el.dataset.edit;
     const value = el.textContent.trim();
 
@@ -478,6 +524,7 @@ document.addEventListener('paste', (event) => {
 
 /* ---------- 컬럼 / 항목 추가·삭제 ---------- */
 async function addColumn() {
+    if (!requireAdmin()) return;
     const created = await run('컬럼 만드는 중…', () => exec(db.from('padlet_columns')
         .insert({ title: '새 컬럼', color: 'none' })
         .select()
@@ -505,6 +552,7 @@ function removeFiles(paths) {
 }
 
 async function deleteColumn(columnId) {
+    if (!requireAdmin()) return;
     const column = findColumn(columnId);
     if (!column) return;
 
@@ -525,6 +573,7 @@ async function deleteColumn(columnId) {
 }
 
 async function deleteItem(columnId, itemId) {
+    if (!requireAdmin()) return;
     const column = findColumn(columnId);
     const item = column?.items.find((entry) => entry.id === itemId);
     if (!item) return;
@@ -542,6 +591,7 @@ async function deleteItem(columnId, itemId) {
 
 // 모든 컬럼·항목·업로드 파일을 지워서 빈 보드로 만듦 (제목, 부제, 디자인 설정은 유지)
 async function resetColumns() {
+    if (!requireAdmin()) return;
     const itemCount = board.columns.reduce((sum, column) => sum + column.items.length, 0);
     const ok = confirm(
         `모든 컬럼(${board.columns.length}개)과 항목(${itemCount}개), 업로드한 파일을 삭제하고\n`
@@ -885,6 +935,7 @@ function scrollToBottom(columnId) {
 
 /* ---------- 컬럼 색 창 ---------- */
 function openColumnStyle(columnId) {
+    if (!requireAdmin()) return;
     const column = findColumn(columnId);
     if (!column) return;
 
@@ -902,6 +953,10 @@ async function commitTheme() {
 
 // 색 선택, 창 열기·닫기 같은 공통 클릭 처리
 document.addEventListener('click', async (event) => {
+    // 관리자 전용 버튼(디자인 색, 카드 모양, 컬럼 색, 초기화, 디자인 창)은 로그인 확인 후에만 동작
+    const adminControl = event.target.closest('[data-bg], [data-accent], [data-card], [data-tint], [data-reset-columns], [data-open-settings]');
+    if (adminControl && !requireAdmin()) return;
+
     const bg = event.target.closest('[data-bg]');
     if (bg) {
         board.theme.background = bg.dataset.bg;
@@ -974,11 +1029,45 @@ if (!isConfigured) {
     showStatus('scripts/config.js 에 Supabase 주소와 키를 넣어 주세요', true);
     boardEl.innerHTML = '<p class="column__empty">Supabase 연결 정보가 없어 보드를 불러올 수 없습니다.</p>';
 } else {
-    (async () => {
-        const loaded = await run('불러오는 중…', loadBoard, '불러옴');
-        if (!loaded) return;
-        titleEl.textContent = board.title;
-        subtitleEl.textContent = board.subtitle;
-        render();
-    })();
+    // 관리자 로그인 창
+    adminToggle.addEventListener('click', async () => {
+        if (!isAdmin) {
+            loginError.hidden = true;
+            return loginDialog.showModal();
+        }
+        await db.auth.signOut();
+        await startApp();
+    });
+
+    loginForm.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        loginError.hidden = true;
+        const submit = loginForm.querySelector('button[type="submit"]');
+        submit.disabled = true;
+
+        try {
+            const email = loginForm.elements.email.value.trim();
+            const password = loginForm.elements.password.value;
+            const { error } = await db.auth.signInWithPassword({ email, password });
+            if (error) throw error;
+
+            // 로그인은 됐어도 관리자 목록에 없으면 바로 로그아웃
+            if (!(await checkAdmin())) {
+                await db.auth.signOut();
+                throw new Error('관리자 계정이 아닙니다.');
+            }
+
+            loginDialog.close();
+            loginForm.reset();
+            await startApp();
+        } catch (error) {
+            const isWrongLogin = /invalid/i.test(error.message || '');
+            loginError.textContent = isWrongLogin ? '이메일 또는 비밀번호가 맞지 않습니다.' : error.message;
+            loginError.hidden = false;
+        } finally {
+            submit.disabled = false;
+        }
+    });
+
+    startApp();
 }

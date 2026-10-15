@@ -581,6 +581,11 @@ button {
     resize: vertical;
 }
 
+/* 관리자가 아닐 때는 관리 기능 버튼과 안내 문구를 숨김 */
+body:not(.is-admin) .admin-only {
+    display: none !important;
+}
+
 /* 항목 수정 버튼 (카드 오른쪽 위, 삭제 버튼 왼쪽) */
 .card__edit {
     position: absolute;

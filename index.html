@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Leo's Padlet</title>
-    <link rel="stylesheet" href="styles/style.css?v=7">
+    <link rel="stylesheet" href="styles/style.css?v=8">
 </head>
 <body>
 
@@ -16,8 +16,9 @@
         </div>
         <div class="topbar__actions">
             <span class="topbar__status" id="saveStatus">자동 저장됨</span>
-            <button class="btn btn--danger" type="button" data-reset-columns>↺ 빈 보드로 초기화</button>
-            <button class="btn btn--ghost" type="button" data-open-settings>🎨 디자인</button>
+            <button class="btn btn--danger admin-only" type="button" data-reset-columns>↺ 빈 보드로 초기화</button>
+            <button class="btn btn--ghost admin-only" type="button" data-open-settings>🎨 디자인</button>
+            <button class="btn btn--primary" type="button" id="adminToggle">🔐 관리자 로그인</button>
         </div>
     </header>
 
@@ -25,7 +26,7 @@
     <section class="board-intro">
         <h1 class="board-intro__title editable" contenteditable="true" data-edit="title" spellcheck="false"></h1>
         <p class="board-intro__desc editable" contenteditable="true" data-edit="subtitle" spellcheck="false"></p>
-        <p class="board-intro__hint">제목, 부제, 컬럼 이름은 눌러서 바로 고칠 수 있어요.</p>
+        <p class="board-intro__hint admin-only">제목, 부제, 컬럼 이름은 눌러서 바로 고칠 수 있어요.</p>
     </section>
 
     <!-- 보드: 컬럼은 JS(scripts/app.js)가 그립니다 -->
@@ -78,7 +79,7 @@
             <p class="composer__error" id="composerError" hidden></p>
 
             <footer class="composer__footer">
-                <button class="btn btn--danger" type="button" id="composerDelete" hidden>🗑 삭제</button>
+                <button class="btn btn--danger admin-only" type="button" id="composerDelete" hidden>🗑 삭제</button>
                 <button class="btn btn--ghost" type="button" id="composerCancel">취소</button>
                 <button class="btn btn--primary" type="submit" id="composerSubmit">게시하기</button>
             </footer>
@@ -137,9 +138,37 @@
         </div>
     </dialog>
 
+    <!-- 관리자 로그인 창 -->
+    <dialog class="composer" id="login">
+        <form class="composer__form" id="loginForm">
+            <header class="composer__header">
+                <h2 class="composer__title">🔐 관리자 로그인</h2>
+                <button class="icon-btn" type="button" data-close="login" aria-label="닫기">✕</button>
+            </header>
+            <p class="setting__desc">관리자 계정의 이메일과 비밀번호를 입력하세요.</p>
+
+            <label class="field">
+                <span class="field__label">이메일</span>
+                <input class="field__input" type="email" name="email" autocomplete="username" required>
+            </label>
+
+            <label class="field">
+                <span class="field__label">비밀번호</span>
+                <input class="field__input" type="password" name="password" autocomplete="current-password" required>
+            </label>
+
+            <p class="composer__error" id="loginError" hidden></p>
+
+            <footer class="composer__footer">
+                <button class="btn btn--ghost" type="button" data-close="login">취소</button>
+                <button class="btn btn--primary" type="submit">로그인</button>
+            </footer>
+        </form>
+    </dialog>
+
     <!-- Supabase 라이브러리 (서버 저장) -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.0/dist/umd/supabase.min.js"></script>
     <script src="scripts/config.js"></script>
-    <script src="scripts/app.js?v=7"></script>
+    <script src="scripts/app.js?v=8"></script>
 </body>
 </html>
