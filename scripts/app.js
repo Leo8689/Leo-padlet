@@ -395,6 +395,8 @@ function renderItem(columnId, item) {
     const date = new Date(item.createdAt).toLocaleDateString('ko-KR');
     return `
         <article class="card card--${item.type}">
+            <button class="card__copy" type="button" data-action="copy-item"
+                data-item="${item.id}" aria-label="내용 복사" title="내용 복사">⧉</button>
             <button class="card__edit" type="button" data-action="edit-item"
                 data-column="${columnId}" data-item="${item.id}" aria-label="항목 수정" title="항목 수정">✎</button>
             <button class="card__delete admin-only" type="button" data-action="delete-item"
@@ -589,6 +591,44 @@ async function deleteItem(columnId, itemId) {
     render();
 }
 
+// 클립보드에 글자 넣기 (보안 연결이 아니거나 브라우저가 막으면 예전 방식으로 복사)
+async function copyToClipboard(text) {
+    try {
+        await navigator.clipboard.writeText(text);
+    } catch (error) {
+        const area = document.createElement('textarea');
+        area.value = text;
+        area.style.position = 'fixed';
+        area.style.opacity = '0';
+        document.body.appendChild(area);
+        area.select();
+        document.execCommand('copy');
+        area.remove();
+    }
+    showStatus('복사됨');
+}
+
+// 항목 종류에 따라 복사할 내용을 정함: 텍스트는 제목+내용, 나머지는 주소
+function copyItem(itemId) {
+    const found = findItem(itemId);
+    if (!found) return;
+    const { item } = found;
+
+    let text = '';
+    if (item.type === 'text') {
+        text = [item.title, item.body].filter(Boolean).join('\n');
+    } else if (item.type === 'link') {
+        text = item.url;
+    } else if (item.filePath) {
+        text = fileUrl(item.filePath);
+    } else {
+        text = item.url;
+    }
+
+    if (!text) return showStatus('복사할 내용이 없습니다.', true);
+    copyToClipboard(text);
+}
+
 // 모든 컬럼·항목·업로드 파일을 지워서 빈 보드로 만듦 (제목, 부제, 디자인 설정은 유지)
 async function resetColumns() {
     if (!requireAdmin()) return;
@@ -623,6 +663,7 @@ boardEl.addEventListener('click', (event) => {
     if (action === 'delete-item') deleteItem(column, item);
     if (action === 'column-color') openColumnStyle(column);
     if (action === 'edit-item') openEditComposer(item);
+    if (action === 'copy-item') copyItem(item);
 });
 
 /* ---------- 항목 작성 창 ---------- */
