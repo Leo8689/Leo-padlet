@@ -228,6 +228,7 @@ button {
 
 /* 컬럼 한 칸 = 위쪽 제목 박스 + 아래쪽 항목 판 */
 .column-wrap {
+    position: relative; /* 드롭 위치 표시선의 기준 */
     flex: 0 0 var(--column-width);
     display: flex;
     flex-direction: column;
@@ -257,6 +258,66 @@ button {
     border: 1px solid var(--color-border);
     border-radius: var(--radius-md);
     box-shadow: var(--shadow-card);
+}
+
+/* 컬럼 순서 바꾸기: 손잡이(⠿)와 ◀ ▶ 버튼 */
+.column__handle {
+    flex-shrink: 0;
+    margin-left: -6px;
+    padding: 0 2px;
+    color: var(--color-text-sub);
+    font-size: 16px;
+    line-height: 1;
+    cursor: grab;
+    user-select: none;
+}
+
+.column__handle:active {
+    cursor: grabbing;
+}
+
+.column__move {
+    flex-shrink: 0;
+    width: 22px;
+    height: 22px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--color-text-sub);
+    font-size: 10px;
+    line-height: 1;
+}
+
+.column__move:hover:not(:disabled) {
+    border-color: var(--color-primary);
+    color: var(--color-primary);
+}
+
+.column__move:disabled {
+    opacity: 0.3;
+    cursor: default;
+}
+
+/* 끌고 있는 컬럼은 흐리게, 놓을 자리는 컬럼 사이에 파란 줄로 표시 */
+.column-wrap.is-dragging {
+    opacity: 0.4;
+}
+
+.column-wrap.drop-before::before,
+.column-wrap.drop-after::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: -12px;
+    width: 4px;
+    border-radius: 2px;
+    background: var(--color-primary);
+}
+
+.column-wrap.drop-after::before {
+    left: auto;
+    right: -12px;
 }
 
 .column__title {

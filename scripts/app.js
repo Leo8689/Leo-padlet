@@ -1,7 +1,7 @@
 /* ==========================================================
    Leo's Padlet - 보드 동작 (Supabase 서버 저장 버전)
    - 제목/부제/컬럼 제목 편집
-   - 컬럼 추가/삭제, 항목 추가/삭제
+   - 컬럼 추가/삭제, 컬럼 순서 바꾸기 (드래그 또는 ◀ ▶), 항목 추가/삭제
    - 텍스트, 링크, 이미지, 영상, 파일 올리기 (서버 저장소)
    - 디자인 설정: 배경, 강조색, 카드 모양, 컬럼별 색
    ========================================================== */
@@ -246,10 +246,19 @@ async function loadBoard(seedIfEmpty = true) {
         columns = await exec(db.from('padlet_columns').select('*, padlet_items(*)').order('created_at'));
     }
 
+    const theme = { ...DEFAULT_THEME, ...(meta?.theme || {}) };
+    // 컬럼 순서는 theme.columnOrder(컬럼 id 목록)에 저장됨. 목록에 없는 새 컬럼은 맨 뒤에 둠
+    const order = Array.isArray(theme.columnOrder) ? theme.columnOrder : [];
+    const rank = (column) => {
+        const index = order.indexOf(column.id);
+        return index === -1 ? order.length : index;
+    };
+    columns.sort((a, b) => rank(a) - rank(b)); // sort는 같은 순위끼리 원래 순서(만든 순서)를 유지함
+
     board = {
         title: meta?.title || DEFAULT_BOARD_META.title,
         subtitle: meta?.subtitle ?? DEFAULT_BOARD_META.subtitle,
-        theme: { ...DEFAULT_THEME, ...(meta?.theme || {}) },
+        theme,
         columns: columns.map((column) => ({
             id: column.id,
             title: column.title,
@@ -410,14 +419,22 @@ function renderItem(columnId, item) {
 }
 
 // 컬럼 = 위쪽 제목 박스 + 아래쪽 항목 판 (제목과 항목 판은 따로 있음)
-function renderColumn(column) {
+function renderColumn(column, index) {
     const items = column.items.map((item) => renderItem(column.id, item)).join('');
+    const isFirst = index === 0;
+    const isLast = index === board.columns.length - 1;
     return `
         <div class="column-wrap" data-column-id="${column.id}" ${columnStyleAttr(column)}>
             <header class="column__header">
+                <span class="column__handle admin-only" draggable="true" data-drag-column="${column.id}"
+                    title="끌어서 순서 바꾸기" aria-label="끌어서 순서 바꾸기">⠿</span>
                 <h3 class="column__title editable" contenteditable="${isAdmin}" spellcheck="false"
                     data-edit="column" data-column="${column.id}">${esc(column.title)}</h3>
                 <span class="column__count">${column.items.length}</span>
+                <button class="column__move admin-only" type="button" data-action="move-column" data-column="${column.id}"
+                    data-dir="-1" aria-label="왼쪽으로 옮기기" title="왼쪽으로 옮기기" ${isFirst ? 'disabled' : ''}>◀</button>
+                <button class="column__move admin-only" type="button" data-action="move-column" data-column="${column.id}"
+                    data-dir="1" aria-label="오른쪽으로 옮기기" title="오른쪽으로 옮기기" ${isLast ? 'disabled' : ''}>▶</button>
                 <button class="icon-btn admin-only" type="button" data-action="column-color"
                     data-column="${column.id}" aria-label="컬럼 색 바꾸기" title="컬럼 색 바꾸기">🎨</button>
                 <button class="icon-btn admin-only" type="button" data-action="delete-column"
@@ -439,7 +456,7 @@ function render() {
     const empty = board.columns.length === 0
         ? '<p class="column__empty board-empty">아직 컬럼이 없습니다. 관리자가 컬럼을 추가하면 여기에 보여요.</p>'
         : '';
-    boardEl.innerHTML = empty + board.columns.map(renderColumn).join('')
+    boardEl.innerHTML = empty + board.columns.map((column, index) => renderColumn(column, index)).join('')
         + '<button class="column-add admin-only" type="button" data-action="add-column">+ 컬럼 추가</button>';
     applyTheme();
 }
@@ -664,7 +681,96 @@ boardEl.addEventListener('click', (event) => {
     if (action === 'column-color') openColumnStyle(column);
     if (action === 'edit-item') openEditComposer(item);
     if (action === 'copy-item') copyItem(item);
+    if (action === 'move-column') moveColumn(column, Number(button.dataset.dir));
 });
+
+/* ---------- 컬럼 순서 바꾸기 (드래그 또는 ◀ ▶ 버튼) ---------- */
+let draggingColumnId = null; // 지금 끌고 있는 컬럼 id
+
+// 현재 화면의 컬럼 순서를 보드 설정(theme.columnOrder)에 저장. 실패하면 서버 기준으로 다시 불러와 화면을 맞춤
+async function saveColumnOrder() {
+    board.theme.columnOrder = board.columns.map((column) => column.id);
+    const saved = await run('순서 저장 중…', saveMeta, '순서 저장됨');
+    if (saved === null) {
+        await loadBoard(false).then(render).catch(console.error);
+    }
+}
+
+// fromIndex 자리의 컬럼을 toIndex 자리로 옮기고 화면과 서버에 반영
+function placeColumn(fromIndex, toIndex) {
+    if (fromIndex === toIndex) return;
+    const [column] = board.columns.splice(fromIndex, 1);
+    board.columns.splice(toIndex, 0, column);
+    render();
+    saveColumnOrder();
+}
+
+// ◀ ▶ 버튼: 한 칸씩 옮김
+function moveColumn(columnId, direction) {
+    if (!requireAdmin()) return;
+    const index = board.columns.findIndex((column) => column.id === columnId);
+    const target = index + direction;
+    if (index < 0 || target < 0 || target >= board.columns.length) return;
+    placeColumn(index, target);
+}
+
+// 드래그 시작: 손잡이(⠿)를 잡았을 때만 시작하고, 컬럼 전체가 끌려가는 모습을 보여 줌
+boardEl.addEventListener('dragstart', (event) => {
+    const handle = event.target.closest?.('[data-drag-column]');
+    if (!handle) return;
+    if (!isAdmin) return event.preventDefault();
+
+    const wrap = handle.closest('.column-wrap');
+    draggingColumnId = handle.dataset.dragColumn;
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', draggingColumnId); // Firefox는 데이터가 있어야 끌기 시작함
+    event.dataTransfer.setDragImage(wrap, 24, 24);
+    wrap.classList.add('is-dragging');
+});
+
+// 끌고 다니는 동안: 놓으면 앞에 들어갈지 뒤에 들어갈지 표시
+boardEl.addEventListener('dragover', (event) => {
+    if (!draggingColumnId) return;
+    const wrap = event.target.closest('.column-wrap');
+    if (!wrap || wrap.dataset.columnId === draggingColumnId) return;
+
+    event.preventDefault(); // 여기서 막아야 drop이 일어남
+    const rect = wrap.getBoundingClientRect();
+    const after = event.clientX > rect.left + rect.width / 2;
+    clearDropMarks();
+    wrap.classList.add(after ? 'drop-after' : 'drop-before');
+});
+
+boardEl.addEventListener('drop', (event) => {
+    if (!draggingColumnId) return;
+    const wrap = event.target.closest('.column-wrap');
+    if (!wrap) return;
+
+    event.preventDefault();
+    const fromIndex = board.columns.findIndex((column) => column.id === draggingColumnId);
+    const targetIndex = board.columns.findIndex((column) => column.id === wrap.dataset.columnId);
+    const after = wrap.classList.contains('drop-after');
+    // 뒤에 놓으면 한 칸 뒤, 앞에 놓으면 그 자리. 왼쪽에서 오른쪽으로 옮길 땐 빠진 자리만큼 당김
+    let toIndex = after ? targetIndex + 1 : targetIndex;
+    if (fromIndex < toIndex) toIndex -= 1;
+    // 여기서 먼저 정리: 드래그 중인 요소가 render()로 사라지면 dragend가 오지 않아 상태가 남음
+    clearDragState();
+    placeColumn(fromIndex, toIndex);
+});
+
+// 끝나면(놓았든, 취소했든) 표시와 끌기 상태를 모두 지움
+boardEl.addEventListener('dragend', clearDragState);
+
+function clearDropMarks() {
+    boardEl.querySelectorAll('.drop-before, .drop-after')
+        .forEach((el) => el.classList.remove('drop-before', 'drop-after'));
+}
+
+function clearDragState() {
+    draggingColumnId = null;
+    boardEl.querySelectorAll('.is-dragging').forEach((el) => el.classList.remove('is-dragging'));
+    clearDropMarks();
+}
 
 /* ---------- 항목 작성 창 ---------- */
 function setType(type) {
@@ -1055,7 +1161,8 @@ document.getElementById('accentInput').addEventListener('change', (event) => {
 });
 
 document.getElementById('themeReset').addEventListener('click', () => {
-    board.theme = { ...DEFAULT_THEME };
+    // 디자인만 기본값으로. 컬럼 순서(columnOrder)는 유지
+    board.theme = { ...DEFAULT_THEME, columnOrder: board.theme.columnOrder };
     commitTheme();
 });
 
