@@ -549,6 +549,31 @@ document.addEventListener('paste', (event) => {
     }
 });
 
+// 보드에서 드래그해 복사할 때는 컬럼 제목(머리글)을 빼고 본문 내용만 복사
+document.addEventListener('copy', (event) => {
+    const selection = window.getSelection();
+    if (!selection.rangeCount || selection.isCollapsed) return;
+    if (!boardEl.contains(selection.anchorNode) || !boardEl.contains(selection.focusNode)) return;
+
+    // 제목 칸 안에서만 고르는 경우는 그대로 복사 (직접 고친 제목을 복사하는 경우)
+    const inTitle = (node) => node.parentElement?.closest('.column__title');
+    if (inTitle(selection.anchorNode) && inTitle(selection.focusNode)) return;
+
+    // 선택 영역을 복사본으로 만든 뒤 컬럼 머리글(제목 줄)을 지우고 글자만 꺼냄
+    const holder = document.createElement('div');
+    holder.style.cssText = 'position:fixed;left:-9999px;top:0;white-space:pre-wrap;';
+    holder.appendChild(selection.getRangeAt(0).cloneContents());
+    if (!holder.querySelector('.column__header')) return;
+
+    holder.querySelectorAll('.column__header').forEach((header) => header.remove());
+    document.body.appendChild(holder);
+    const text = holder.innerText.trim();
+    holder.remove();
+
+    event.preventDefault();
+    event.clipboardData.setData('text/plain', text);
+});
+
 /* ---------- 컬럼 / 항목 추가·삭제 ---------- */
 async function addColumn() {
     if (!requireAdmin()) return;
