@@ -251,6 +251,7 @@ button {
 .column__header {
     flex-shrink: 0;
     display: flex;
+    flex-wrap: wrap; /* 제목은 윗줄 전체, 관리 버튼은 아랫줄로 내려감 */
     align-items: center;
     gap: 8px;
     padding: 10px 10px 10px 14px;
@@ -260,10 +261,19 @@ button {
     box-shadow: var(--shadow-card);
 }
 
+/* 관리 버튼 줄 (아랫줄): 왼쪽 손잡이, 오른쪽 ◀ ▶ 🎨 🗑 */
+.column__tools {
+    flex: 1 0 100%;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
 /* 컬럼 순서 바꾸기: 손잡이(⠿)와 ◀ ▶ 버튼 */
 .column__handle {
     flex-shrink: 0;
     margin-left: -6px;
+    margin-right: auto; /* 손잡이를 왼쪽에 두고 나머지 버튼은 오른쪽으로 밀기 */
     padding: 0 2px;
     color: var(--color-text-sub);
     font-size: 16px;
@@ -320,15 +330,21 @@ button {
     right: -12px;
 }
 
+/* 컬럼 제목: 가로 폭을 넓게 쓰고, Enter로 넣은 줄바꿈을 그대로 보여 줌 */
 .column__title {
-    flex: 1;
+    flex: 1 1 0;
     min-width: 0;
     font-size: 16px;
     font-weight: 700;
+    line-height: 1.4;
+    white-space: pre-wrap;
     overflow-wrap: anywhere;
 }
 
 .column__count {
+    flex-shrink: 0;
+    align-self: flex-start;
+    margin-top: 3px;
     min-width: 24px;
     padding: 2px 8px;
     border-radius: 999px;

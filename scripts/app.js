@@ -426,19 +426,21 @@ function renderColumn(column, index) {
     return `
         <div class="column-wrap" data-column-id="${column.id}" ${columnStyleAttr(column)}>
             <header class="column__header">
-                <span class="column__handle admin-only" draggable="true" data-drag-column="${column.id}"
-                    title="끌어서 순서 바꾸기" aria-label="끌어서 순서 바꾸기">⠿</span>
                 <h3 class="column__title editable" contenteditable="${isAdmin}" spellcheck="false"
                     data-edit="column" data-column="${column.id}">${esc(column.title)}</h3>
                 <span class="column__count">${column.items.length}</span>
-                <button class="column__move admin-only" type="button" data-action="move-column" data-column="${column.id}"
-                    data-dir="-1" aria-label="왼쪽으로 옮기기" title="왼쪽으로 옮기기" ${isFirst ? 'disabled' : ''}>◀</button>
-                <button class="column__move admin-only" type="button" data-action="move-column" data-column="${column.id}"
-                    data-dir="1" aria-label="오른쪽으로 옮기기" title="오른쪽으로 옮기기" ${isLast ? 'disabled' : ''}>▶</button>
-                <button class="icon-btn admin-only" type="button" data-action="column-color"
-                    data-column="${column.id}" aria-label="컬럼 색 바꾸기" title="컬럼 색 바꾸기">🎨</button>
-                <button class="icon-btn admin-only" type="button" data-action="delete-column"
-                    data-column="${column.id}" aria-label="컬럼 삭제" title="컬럼 삭제">🗑</button>
+                <div class="column__tools admin-only">
+                    <span class="column__handle" draggable="true" data-drag-column="${column.id}"
+                        title="끌어서 순서 바꾸기" aria-label="끌어서 순서 바꾸기">⠿</span>
+                    <button class="column__move" type="button" data-action="move-column" data-column="${column.id}"
+                        data-dir="-1" aria-label="왼쪽으로 옮기기" title="왼쪽으로 옮기기" ${isFirst ? 'disabled' : ''}>◀</button>
+                    <button class="column__move" type="button" data-action="move-column" data-column="${column.id}"
+                        data-dir="1" aria-label="오른쪽으로 옮기기" title="오른쪽으로 옮기기" ${isLast ? 'disabled' : ''}>▶</button>
+                    <button class="icon-btn" type="button" data-action="column-color"
+                        data-column="${column.id}" aria-label="컬럼 색 바꾸기" title="컬럼 색 바꾸기">🎨</button>
+                    <button class="icon-btn" type="button" data-action="delete-column"
+                        data-column="${column.id}" aria-label="컬럼 삭제" title="컬럼 삭제">🗑</button>
+                </div>
             </header>
 
             <section class="column">
@@ -494,12 +496,12 @@ async function startApp() {
 async function applyEdit(el) {
     if (!requireAdmin()) return;
     const kind = el.dataset.edit;
-    const value = el.textContent.trim();
 
     if (kind === 'column') {
+        // 컬럼 제목은 Enter로 줄바꿈하므로 innerText로 읽어야 줄바꿈이 남음
         const column = findColumn(el.dataset.column);
         if (!column) return;
-        const newTitle = value || column.title;
+        const newTitle = el.innerText.trim() || column.title;
         el.textContent = newTitle;
         if (newTitle === column.title) return;
         column.title = newTitle;
@@ -507,6 +509,7 @@ async function applyEdit(el) {
             .update({ title: newTitle }).eq('id', column.id)));
     }
 
+    const value = el.textContent.trim();
     if (kind === 'title') {
         board.title = value || board.title;
         el.textContent = board.title;
@@ -524,12 +527,17 @@ document.addEventListener('focusout', (event) => {
     }
 });
 
-// Enter는 줄바꿈 대신 편집 끝내기
+// Enter는 줄바꿈 대신 편집 끝내기 (컬럼 제목은 예외: Enter로 줄바꿈, Ctrl+Enter로 편집 끝내기)
 document.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter' && event.target.matches?.('[data-edit]')) {
-        event.preventDefault();
-        event.target.blur();
+    if (event.key !== 'Enter' || !event.target.matches?.('[data-edit]')) return;
+    event.preventDefault();
+
+    if (event.target.dataset.edit === 'column') {
+        if (event.ctrlKey || event.metaKey) event.target.blur();
+        else document.execCommand('insertLineBreak');
+        return;
     }
+    event.target.blur();
 });
 
 // 붙여넣기는 글자만 들어가게
