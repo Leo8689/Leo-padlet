@@ -16,6 +16,8 @@
         </div>
         <div class="topbar__actions">
             <span class="topbar__status" id="saveStatus">자동 저장됨</span>
+            <button class="btn btn--ghost" type="button" data-export="pdf">📄 PDF 받기</button>
+            <button class="btn btn--ghost" type="button" data-export="doc">📝 Word 받기</button>
             <button class="btn btn--danger admin-only" type="button" data-reset-columns>↺ 빈 보드로 초기화</button>
             <button class="btn btn--ghost admin-only" type="button" data-open-settings>🎨 디자인</button>
             <button class="btn btn--primary" type="button" id="adminToggle">🔐 관리자 로그인</button>
@@ -169,6 +171,6 @@
     <!-- Supabase 라이브러리 (서버 저장) -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.0/dist/umd/supabase.min.js"></script>
     <script src="scripts/config.js"></script>
-    <script src="scripts/app.js?v=11"></script>
+    <script src="scripts/app.js?v=13"></script>
 </body>
 </html>

@@ -1178,6 +1178,106 @@ document.getElementById('themeReset').addEventListener('click', () => {
 document.getElementById('composerClose').addEventListener('click', () => composer.close());
 document.getElementById('composerCancel').addEventListener('click', () => composer.close());
 
+/* ---------- 자료 내려받기 (PDF · Word) ---------- */
+// 이미지·영상·파일은 뺌. 텍스트와 링크 글만 컬럼별로 정리함
+function buildExportHtml() {
+    const toHtml = (value = '') => esc(value).replace(/\n/g, '<br>');
+
+    const sections = board.columns.map((column) => {
+        const items = column.items.filter((item) => item.type === 'text' || item.type === 'link');
+        const cards = items.map((item) => {
+            const date = new Date(item.createdAt).toLocaleDateString('ko-KR');
+            const content = item.type === 'link'
+                ? `<p><a href="${esc(safeUrl(item.url))}">${esc(item.url)}</a></p>`
+                : (item.body ? `<p>${toHtml(item.body)}</p>` : '');
+            return `
+                <div class="item">
+                    <h4>${toHtml(item.title)}</h4>
+                    ${content}
+                    <p class="meta">${esc(item.author || '익명')} · ${TYPE_LABEL[item.type]} · ${date}</p>
+                </div>`;
+        }).join('');
+
+        return `
+            <section>
+                <h2>${toHtml(column.title)}</h2>
+                ${cards || '<p class="empty">글 자료가 없습니다.</p>'}
+            </section>`;
+    }).join('');
+
+    return `<!DOCTYPE html>
+<html lang="ko" xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word">
+<head>
+    <meta charset="UTF-8">
+    <title>${esc(board.title)}</title>
+    <style>
+        @page { size: A4; margin: 18mm; }
+        body { font-family: "Malgun Gothic", "Pretendard", sans-serif; color: #1f2430; font-size: 11pt; line-height: 1.6; }
+        h1 { font-size: 22pt; margin: 0 0 4pt; }
+        .subtitle { color: #6b7280; margin: 0 0 16pt; }
+        h2 { font-size: 15pt; margin: 20pt 0 8pt; padding-bottom: 4pt; border-bottom: 2px solid #4f6df5; }
+        .item { border: 1px solid #d6dae3; border-radius: 6px; padding: 8pt 12pt; margin-bottom: 8pt; }
+        .item h4 { font-size: 12pt; margin: 0 0 4pt; }
+        .item p { margin: 0 0 4pt; }
+        .item a { color: #2563eb; word-break: break-all; }
+        .meta { color: #6b7280; font-size: 9pt; }
+        .empty { color: #6b7280; }
+    </style>
+</head>
+<body>
+    <h1>${toHtml(board.title)}</h1>
+    <p class="subtitle">${toHtml(board.subtitle)}</p>
+    ${sections || '<p class="empty">글 자료가 없습니다.</p>'}
+</body>
+</html>`;
+}
+
+// 파일 이름에 쓸 수 없는 글자는 _ 로 바꿈
+function exportFileName(extension) {
+    const base = (board.title || 'Padlet').replace(/[\\/:*?"<>|]/g, '_').trim() || 'Padlet';
+    return `${base}.${extension}`;
+}
+
+// Word: 워드가 여는 HTML 형식으로 .doc 파일을 받음
+function downloadWord() {
+    const blob = new Blob(['﻿', buildExportHtml()], { type: 'application/msword' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = exportFileName('doc');
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+// PDF: 인쇄 창을 열고 "PDF로 저장"을 고르면 파일이 됨 (한글 글꼴이 그대로 들어감)
+function downloadPdf() {
+    const frame = document.createElement('iframe');
+    frame.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;';
+    document.body.appendChild(frame);
+
+    const doc = frame.contentDocument;
+    doc.open();
+    doc.write(buildExportHtml());
+    doc.close();
+
+    frame.contentWindow.onafterprint = () => frame.remove();
+    frame.contentWindow.focus();
+    frame.contentWindow.print();
+}
+
+document.querySelectorAll('[data-export]').forEach((button) => {
+    button.addEventListener('click', () => {
+        const hasText = board.columns.some((column) => column.items.some((item) => item.type === 'text' || item.type === 'link'));
+        if (!hasText) return showStatus('내려받을 글 자료가 없습니다.', true);
+
+        if (button.dataset.export === 'pdf') downloadPdf();
+        else downloadWord();
+        showStatus(button.dataset.export === 'pdf' ? 'PDF 저장 창을 열었습니다.' : 'Word 파일을 받았습니다.');
+    });
+});
+
 /* ---------- 시작 ---------- */
 renderPresetSwatches();
 
